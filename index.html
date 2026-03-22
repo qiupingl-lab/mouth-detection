@@ -2,16 +2,45 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mouth Detection</title>
+
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+    video {
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+    }
+    #status {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: white;
+      font-size: 24px;
+      background: rgba(0,0,0,0.5);
+      padding: 10px;
+      border-radius: 10px;
+    }
+  </style>
 </head>
 
-<body style="margin:0; overflow:hidden;">
-<video id="video" autoplay playsinline style="width:100%; height:100%;"></video>
+<body>
+
+<video id="video" autoplay playsinline></video>
+<div id="status">Starting...</div>
 
 <script>
 const video = document.getElementById('video');
+const statusText = document.getElementById('status');
 
+// Initialize MediaPipe
 const faceMesh = new FaceMesh({
   locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
 });
@@ -19,34 +48,59 @@ const faceMesh = new FaceMesh({
 faceMesh.setOptions({
   maxNumFaces: 1,
   refineLandmarks: true,
+  minDetectionConfidence: 0.5,
+  minTrackingConfidence: 0.5
 });
 
+// Mouth detection logic
 faceMesh.onResults(results => {
-  if (!results.multiFaceLandmarks) return;
+  if (!results.multiFaceLandmarks) {
+    statusText.innerText = "No face";
+    return;
+  }
 
   const landmarks = results.multiFaceLandmarks[0];
 
+  // Upper lip (13), lower lip (14)
   const upper = landmarks[13];
   const lower = landmarks[14];
 
   const mouthOpen = Math.abs(upper.y - lower.y);
 
+  console.log("Mouth distance:", mouthOpen);
+
   if (mouthOpen > 0.02) {
+    statusText.innerText = "OPEN 😁";
     window.parent.postMessage("OPEN", "*");
   } else {
+    statusText.innerText = "CLOSED 😐";
     window.parent.postMessage("CLOSED", "*");
   }
 });
 
-const camera = new Camera(video, {
-  onFrame: async () => {
-    await faceMesh.send({image: video});
-  },
-  width: 640,
-  height: 480
+// Request camera
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+.then(stream => {
+  video.srcObject = stream;
+
+  video.onloadedmetadata = () => {
+    video.play();
+    startDetection();
+  };
+})
+.catch(err => {
+  alert("Camera error: " + err.message);
 });
 
-camera.start();
+// Detection loop
+function startDetection() {
+  async function detect() {
+    await faceMesh.send({ image: video });
+    requestAnimationFrame(detect);
+  }
+  detect();
+}
 </script>
+
 </body>
 </html>
